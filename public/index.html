@@ -21,7 +21,7 @@
         </div>
 
         <div id="drop-zone" class="drop-zone border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer hover:border-blue-500">
-            <input type="file" id="file-input" class="hidden" accept=".pdf,.txt,.jpg,.jpeg,.png,.doc,.docx">
+            <input type="file" id="file-input" class="hidden" accept=".pdf,.txt,.jpg,.jpeg,.png,.doc,.docx" multiple>
             <div class="flex flex-col items-center">
                 <svg class="w-12 h-12 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l-3 3m3-3l3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
@@ -29,17 +29,17 @@
                 <p class="mt-4 text-sm text-gray-600">
                     <span class="font-semibold text-blue-600">点击上传</span> 或拖拽文件到此处
                 </p>
-                <p class="text-xs text-gray-500 mt-1">也可以直接在页面上粘贴文件 (Ctrl+V)</p>
+                <p class="text-xs text-gray-500 mt-1">最多支持 9 个文件，也可以直接在页面上粘贴文件 (Ctrl+V)</p>
             </div>
         </div>
 
-        <div id="file-info" class="hidden space-y-4">
-            <div class="bg-gray-100 p-4 rounded-md text-sm">
-                <p class="font-medium text-gray-700">已上传文件:</p>
-                <p id="file-name" class="text-gray-900 truncate"></p>
+        <div id="file-list-container" class="hidden space-y-4">
+            <div class="bg-gray-50 p-4 rounded-md">
+                <p class="font-medium text-gray-700 mb-3">已上传文件 (<span id="file-count">0</span>/9):</p>
+                <div id="file-list" class="space-y-2"></div>
             </div>
             <button id="print-button" disabled class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors">
-                打印
+                按顺序打印所有文件
             </button>
         </div>
 
@@ -49,13 +49,16 @@
 <script>
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
-    const fileInfo = document.getElementById('file-info');
-    const fileNameDisplay = document.getElementById('file-name');
+    const fileListContainer = document.getElementById('file-list-container');
+    const fileList = document.getElementById('file-list');
+    const fileCount = document.getElementById('file-count');
     const printButton = document.getElementById('print-button');
     const statusMessage = document.getElementById('status-message');
 
-    // 保存上传成功后服务器返回的文件名
-    let serverFilename = null;
+    // 文件列表：存储 { file, serverFilename, originalName, status }
+    // status: 'pending' | 'uploading' | 'uploaded' | 'printing' | 'printed' | 'error'
+    let files = [];
+    const MAX_FILES = 9;
 
     // --- 事件监听 ---
 
@@ -63,7 +66,7 @@
     dropZone.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', () => {
         if (fileInput.files.length > 0) {
-            handleFileUpload(fileInput.files[0]);
+            handleFiles(Array.from(fileInput.files));
         }
     });
 
@@ -79,7 +82,7 @@
         e.preventDefault();
         dropZone.classList.remove('border-blue-500', 'bg-blue-50');
         if (e.dataTransfer.files.length > 0) {
-            handleFileUpload(e.dataTransfer.files[0]);
+            handleFiles(Array.from(e.dataTransfer.files));
         }
     });
     
@@ -87,22 +90,63 @@
     window.addEventListener('paste', (e) => {
         if (e.clipboardData && e.clipboardData.files.length > 0) {
             e.preventDefault();
-            handleFileUpload(e.clipboardData.files[0]);
+            handleFiles(Array.from(e.clipboardData.files));
         }
     });
 
     // 打印按钮点击事件
-    printButton.addEventListener('click', handlePrint);
+    printButton.addEventListener('click', handlePrintAll);
 
     // --- 核心函数 ---
 
-    // 处理文件上传的函数
-    async function handleFileUpload(file) {
-        resetUI();
-        setStatus('正在上传...', 'text-blue-600');
+    // 处理多个文件
+    function handleFiles(newFiles) {
+        // 检查是否超过最大数量
+        const remainingSlots = MAX_FILES - files.length;
+        if (remainingSlots <= 0) {
+            setStatus(`最多只能上传 ${MAX_FILES} 个文件`, 'text-red-600');
+            return;
+        }
+
+        // 限制添加的文件数量
+        const filesToAdd = newFiles.slice(0, remainingSlots);
+        if (newFiles.length > remainingSlots) {
+            setStatus(`只能添加 ${remainingSlots} 个文件（已达到上限）`, 'text-yellow-600');
+        }
+
+        // 添加文件到列表
+        filesToAdd.forEach(file => {
+            files.push({
+                file: file,
+                serverFilename: null,
+                originalName: file.name,
+                status: 'pending'
+            });
+        });
+
+        updateFileList();
+        // 自动开始上传
+        uploadPendingFiles();
+    }
+
+    // 上传待处理的文件
+    async function uploadPendingFiles() {
+        const pendingFiles = files.filter(f => f.status === 'pending');
+        if (pendingFiles.length === 0) return;
+
+        for (const fileItem of pendingFiles) {
+            fileItem.status = 'uploading';
+            updateFileList();
+            await handleFileUpload(fileItem);
+        }
+    }
+
+    // 处理单个文件上传
+    async function handleFileUpload(fileItem) {
+        setStatus(`正在上传: ${fileItem.originalName}...`, 'text-blue-600');
 
         const formData = new FormData();
-        formData.append('file', file);
+        formData.append('file', fileItem.file);
 
         try {
             const response = await fetch('/upload', {
@@ -113,50 +157,151 @@
             const result = await response.json();
 
             if (result.success) {
-                serverFilename = result.filename; // 保存服务端文件名
-                fileNameDisplay.textContent = result.originalName;
-                fileInfo.classList.remove('hidden');
-                printButton.disabled = false;
-                setStatus('上传成功！请点击打印。', 'text-green-600');
+                fileItem.serverFilename = result.filename;
+                fileItem.status = 'uploaded';
+                updateFileList();
+                setStatus(`上传成功: ${fileItem.originalName}`, 'text-green-600');
             } else {
                 throw new Error(result.message);
             }
         } catch (error) {
             console.error('上传失败:', error);
-            setStatus(`上传失败: ${error.message}`, 'text-red-600');
-            resetUI();
+            fileItem.status = 'error';
+            updateFileList();
+            setStatus(`上传失败: ${fileItem.originalName} - ${error.message}`, 'text-red-600');
         }
     }
 
-    // 处理打印的函数
-    async function handlePrint() {
-        if (!serverFilename) return;
+    // 按顺序打印所有文件
+    async function handlePrintAll() {
+        const uploadedFiles = files.filter(f => f.status === 'uploaded');
+        if (uploadedFiles.length === 0) {
+            setStatus('没有可打印的文件', 'text-red-600');
+            return;
+        }
 
         printButton.disabled = true;
-        setStatus('正在发送到打印机...', 'text-blue-600');
+        setStatus(`准备打印 ${uploadedFiles.length} 个文件...`, 'text-blue-600');
 
-        try {
-            const response = await fetch('/print', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename: serverFilename })
-            });
-            
-            const result = await response.json();
+        let successCount = 0;
+        let failCount = 0;
 
-            if (result.success) {
-                // 打印成功后的回调提示
-                setStatus(`打印成功！\n${result.message}`, 'text-green-600');
-                // 可以选择在打印成功后自动重置界面
-                setTimeout(resetUI, 5000); // 5秒后重置
-            } else {
-                throw new Error(result.message);
+        for (let i = 0; i < uploadedFiles.length; i++) {
+            const fileItem = uploadedFiles[i];
+            fileItem.status = 'printing';
+            updateFileList();
+            setStatus(`正在打印 (${i + 1}/${uploadedFiles.length}): ${fileItem.originalName}...`, 'text-blue-600');
+
+            try {
+                const response = await fetch('/print', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: fileItem.serverFilename })
+                });
+                
+                const result = await response.json();
+
+                if (result.success) {
+                    fileItem.status = 'printed';
+                    successCount++;
+                    updateFileList();
+                } else {
+                    throw new Error(result.message);
+                }
+            } catch (error) {
+                console.error('打印失败:', error);
+                fileItem.status = 'error';
+                failCount++;
+                updateFileList();
             }
-        } catch (error) {
-            console.error('打印失败:', error);
-            setStatus(`打印失败: ${error.message}`, 'text-red-600');
-            printButton.disabled = false; // 打印失败，允许重试
+
+            // 在打印之间添加短暂延迟，避免打印机过载
+            if (i < uploadedFiles.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
         }
+
+        // 打印完成
+        if (failCount === 0) {
+            setStatus(`所有文件打印完成！共 ${successCount} 个文件`, 'text-green-600');
+        } else {
+            setStatus(`打印完成：成功 ${successCount} 个，失败 ${failCount} 个`, 'text-yellow-600');
+        }
+
+        printButton.disabled = false;
+    }
+
+    // 删除文件
+    function removeFile(index) {
+        files.splice(index, 1);
+        updateFileList();
+        if (files.length === 0) {
+            fileListContainer.classList.add('hidden');
+            setStatus('', '');
+        }
+    }
+
+    // 更新文件列表显示
+    function updateFileList() {
+        if (files.length === 0) {
+            fileListContainer.classList.add('hidden');
+            printButton.disabled = true;
+            return;
+        }
+
+        fileListContainer.classList.remove('hidden');
+        fileCount.textContent = files.length;
+
+        fileList.innerHTML = '';
+        files.forEach((fileItem, index) => {
+            const fileItemDiv = document.createElement('div');
+            fileItemDiv.className = 'flex items-center justify-between bg-white p-3 rounded border border-gray-200';
+
+            const statusColors = {
+                'pending': 'text-gray-500',
+                'uploading': 'text-blue-600',
+                'uploaded': 'text-green-600',
+                'printing': 'text-blue-600',
+                'printed': 'text-green-600',
+                'error': 'text-red-600'
+            };
+
+            const statusTexts = {
+                'pending': '等待上传',
+                'uploading': '上传中...',
+                'uploaded': '已上传',
+                'printing': '打印中...',
+                'printed': '已打印',
+                'error': '错误'
+            };
+
+            const statusIcon = fileItem.status === 'uploaded' || fileItem.status === 'printed' 
+                ? '✓' 
+                : fileItem.status === 'error' 
+                ? '✗' 
+                : fileItem.status === 'uploading' || fileItem.status === 'printing'
+                ? '⟳'
+                : '○';
+
+            fileItemDiv.innerHTML = `
+                <div class="flex items-center space-x-3 flex-1 min-w-0">
+                    <span class="text-sm font-medium ${statusColors[fileItem.status]}">${statusIcon}</span>
+                    <span class="text-sm text-gray-700 truncate flex-1" title="${fileItem.originalName}">${index + 1}. ${fileItem.originalName}</span>
+                    <span class="text-xs ${statusColors[fileItem.status]}">${statusTexts[fileItem.status]}</span>
+                </div>
+                ${fileItem.status !== 'uploading' && fileItem.status !== 'printing' ? `
+                    <button onclick="removeFile(${index})" class="ml-2 text-red-500 hover:text-red-700 text-sm font-medium">
+                        删除
+                    </button>
+                ` : ''}
+            `;
+
+            fileList.appendChild(fileItemDiv);
+        });
+
+        // 更新打印按钮状态
+        const hasUploadedFiles = files.some(f => f.status === 'uploaded');
+        printButton.disabled = !hasUploadedFiles || files.some(f => f.status === 'printing');
     }
 
     // 设置状态信息的辅助函数
@@ -165,15 +310,8 @@
         statusMessage.className = `text-center text-sm font-medium ${colorClass}`;
     }
 
-    // 重置界面的函数
-    function resetUI() {
-        fileInput.value = ''; // 清空文件选择
-        fileInfo.classList.add('hidden');
-        printButton.disabled = true;
-        fileNameDisplay.textContent = '';
-        serverFilename = null;
-        setStatus('', '');
-    }
+    // 将 removeFile 函数暴露到全局作用域，以便在 HTML 中调用
+    window.removeFile = removeFile;
 
 </script>
 
