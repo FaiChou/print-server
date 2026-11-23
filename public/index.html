@@ -10,11 +10,35 @@
         .drop-zone {
             transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
         }
+
+        #print-scaling {
+            font: inherit;
+            font-size: max(1rem, 1em);
+        }
+
+        @media (pointer: coarse) {
+            #print-scaling {
+                min-height: 48px;
+            }
+        }
     </style>
 </head>
 <body class="h-full flex items-center justify-center p-4">
 
     <div class="w-full max-w-lg mx-auto bg-white rounded-xl shadow-lg p-8 space-y-6">
+        <div class="flex items-center justify-end gap-2 -mt-2">
+            <label for="print-scaling" class="text-sm font-medium text-gray-700 whitespace-nowrap">打印缩放</label>
+            <select
+                id="print-scaling"
+                name="printScaling"
+                class="text-gray-800 bg-white border border-gray-500 rounded-md px-2.5 py-1.5 min-h-[36px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 cursor-pointer disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+            >
+                <option value="fit" selected>fit（适应页面）</option>
+                <option value="auto-fit">auto-fit（仅超尺寸缩放）</option>
+                <option value="none">none（无额外参数）</option>
+            </select>
+        </div>
+
         <div class="text-center">
             <h1 class="text-3xl font-bold text-gray-800">网络打印机</h1>
             <p class="text-gray-500 mt-2">上传文件并发送到热敏打印机</p>
@@ -43,7 +67,7 @@
             </button>
         </div>
 
-        <div id="status-message" class="text-center text-sm font-medium"></div>
+        <div id="status-message" role="status" aria-live="polite" class="text-center text-sm font-medium"></div>
     </div>
 
 <script>
@@ -53,6 +77,7 @@
     const fileList = document.getElementById('file-list');
     const fileCount = document.getElementById('file-count');
     const printButton = document.getElementById('print-button');
+    const printScalingSelect = document.getElementById('print-scaling');
     const statusMessage = document.getElementById('status-message');
 
     // 文件列表：存储 { file, serverFilename, originalName, status }
@@ -180,55 +205,63 @@
             return;
         }
 
+        const printScaling = printScalingSelect.value;
         printButton.disabled = true;
+        printScalingSelect.disabled = true;
         setStatus(`准备打印 ${uploadedFiles.length} 个文件...`, 'text-blue-600');
 
         let successCount = 0;
         let failCount = 0;
 
-        for (let i = 0; i < uploadedFiles.length; i++) {
-            const fileItem = uploadedFiles[i];
-            fileItem.status = 'printing';
-            updateFileList();
-            setStatus(`正在打印 (${i + 1}/${uploadedFiles.length}): ${fileItem.originalName}...`, 'text-blue-600');
-
-            try {
-                const response = await fetch('/print', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename: fileItem.serverFilename })
-                });
-                
-                const result = await response.json();
-
-                if (result.success) {
-                    fileItem.status = 'printed';
-                    successCount++;
-                    updateFileList();
-                } else {
-                    throw new Error(result.message);
-                }
-            } catch (error) {
-                console.error('打印失败:', error);
-                fileItem.status = 'error';
-                failCount++;
+        try {
+            for (let i = 0; i < uploadedFiles.length; i++) {
+                const fileItem = uploadedFiles[i];
+                fileItem.status = 'printing';
                 updateFileList();
+                setStatus(`正在打印 (${i + 1}/${uploadedFiles.length}): ${fileItem.originalName}...`, 'text-blue-600');
+
+                try {
+                    const response = await fetch('/print', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            filename: fileItem.serverFilename,
+                            printScaling
+                        })
+                    });
+                    
+                    const result = await response.json();
+
+                    if (result.success) {
+                        fileItem.status = 'printed';
+                        successCount++;
+                        updateFileList();
+                    } else {
+                        throw new Error(result.message);
+                    }
+                } catch (error) {
+                    console.error('打印失败:', error);
+                    fileItem.status = 'error';
+                    failCount++;
+                    updateFileList();
+                }
+
+                // 在打印之间添加短暂延迟，避免打印机过载
+                if (i < uploadedFiles.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
             }
 
-            // 在打印之间添加短暂延迟，避免打印机过载
-            if (i < uploadedFiles.length - 1) {
-                await new Promise(resolve => setTimeout(resolve, 500));
+            // 打印完成
+            if (failCount === 0) {
+                setStatus(`所有文件打印完成！共 ${successCount} 个文件`, 'text-green-600');
+            } else {
+                setStatus(`打印完成：成功 ${successCount} 个，失败 ${failCount} 个`, 'text-yellow-600');
             }
+        } finally {
+            printScalingSelect.disabled = false;
+            printButton.disabled = false;
         }
-
-        // 打印完成
-        if (failCount === 0) {
-            setStatus(`所有文件打印完成！共 ${successCount} 个文件`, 'text-green-600');
-        } else {
-            setStatus(`打印完成：成功 ${successCount} 个，失败 ${failCount} 个`, 'text-yellow-600');
-        }
-
-        printButton.disabled = false;
     }
 
     // 删除文件

@@ -3,14 +3,36 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const os = require('os');
 const fs = require('fs');
 
 // --- 配置 ---
 // 重要：请将 'HPRT_N41BT' 替换为你自己的打印机名称
 const PRINTER_NAME = 'HPRT_N41BT';
-const PORT = 3456; // 你可以修改为你想要的端口号
+const PORT = process.env.PORT || 3456; // 你可以修改为你想要的端口号
+
+const DEFAULT_PRINT_SCALING = 'fit';
+const PRINT_SCALING_ARGS = {
+  fit: ['-o', 'print-scaling=fit'],
+  'auto-fit': ['-o', 'print-scaling=auto-fit'],
+  none: [] // 保持原有行为：不传额外 -o 参数
+};
+
+/**
+ * 构建 lp 命令参数数组；若 printScaling 不在允许列表中则返回 null
+ */
+function buildLpArgs(printerName, filePath, printScaling = DEFAULT_PRINT_SCALING) {
+  const scalingKey = (printScaling === undefined || printScaling === null || printScaling === '')
+    ? DEFAULT_PRINT_SCALING
+    : printScaling;
+
+  if (!Object.prototype.hasOwnProperty.call(PRINT_SCALING_ARGS, scalingKey)) {
+    return null;
+  }
+
+  return ['-d', printerName, ...PRINT_SCALING_ARGS[scalingKey], filePath];
+}
 
 // 初始化 Express 应用
 const app = express();
@@ -62,7 +84,7 @@ app.post('/upload', upload.single('file'), (req, res) => {
  * API 端点：执行打印命令
  */
 app.post('/print', (req, res) => {
-  const { filename } = req.body;
+  const { filename, printScaling } = req.body || {};
 
   if (!filename) {
     return res.status(400).json({ success: false, message: '缺少要打印的文件名' });
@@ -70,6 +92,11 @@ app.post('/print', (req, res) => {
 
   // 安全性：构建完整的文件路径，并确保它在 /tmp 目录内，防止路径遍历攻击
   const filePath = path.join(os.tmpdir(), path.basename(filename));
+  const lpArgs = buildLpArgs(PRINTER_NAME, filePath, printScaling);
+
+  if (!lpArgs) {
+    return res.status(400).json({ success: false, message: '无效的打印缩放参数' });
+  }
 
   // 再次确认文件是否存在
   if (!fs.existsSync(filePath)) {
@@ -77,12 +104,10 @@ app.post('/print', (req, res) => {
     return res.status(404).json({ success: false, message: '服务器上找不到该文件，可能已被清理' });
   }
 
-  // 构建打印命令
-  const command = `lp -d ${PRINTER_NAME} "${filePath}"`;
-  console.log(`正在执行打印命令: ${command}`);
+  console.log(`正在执行打印命令: lp ${lpArgs.join(' ')}`);
 
   // 执行命令行
-  exec(command, (error, stdout, stderr) => {
+  execFile('lp', lpArgs, (error, stdout, stderr) => {
     if (error) {
       console.error(`打印命令执行错误: ${error.message}`);
       console.error(`stderr: ${stderr}`);
@@ -96,7 +121,11 @@ app.post('/print', (req, res) => {
 });
 
 // 启动服务器
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`打印服务器已启动，正在监听 http://0.0.0.0:${PORT}`);
-  console.log(`请在局域网内其他设备上访问 http://<你的Debian设备IP>:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`打印服务器已启动，正在监听 http://0.0.0.0:${PORT}`);
+    console.log(`请在局域网内其他设备上访问 http://<你的Debian设备IP>:${PORT}`);
+  });
+}
+
+module.exports = { app, buildLpArgs, DEFAULT_PRINT_SCALING, PRINT_SCALING_ARGS };
