@@ -8,8 +8,8 @@ const os = require('os');
 const fs = require('fs');
 
 // --- 配置 ---
-// 重要：请将 'HPRT_N41BT' 替换为你自己的打印机名称
-const PRINTER_NAME = 'HPRT_N41BT';
+// 重要：请将 'N41BT' 替换为你自己的打印机名称
+const PRINTER_NAME = 'N41BT';
 const PORT = process.env.PORT || 3456; // 你可以修改为你想要的端口号
 
 const DEFAULT_PRINT_SCALING = 'fit';
