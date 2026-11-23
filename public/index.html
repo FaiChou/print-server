@@ -11,34 +11,111 @@
             transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
         }
 
-        #print-scaling {
-            font: inherit;
-            font-size: max(1rem, 1em);
+        .visually-hidden {
+            position: absolute;
+            clip-path: inset(50%);
+            overflow: hidden;
+            width: 1px;
+            height: 1px;
+            margin: -1px;
+            padding: 0;
+            border: 0;
+            white-space: nowrap;
+        }
+
+        .scaling-option {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.375rem 0.875rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            line-height: 1.25;
+            color: #4b5563;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .scaling-option:hover {
+            color: #111827;
+        }
+
+        .scaling-option:has(:checked) {
+            background-color: #ffffff;
+            color: #1d4ed8;
+            font-weight: 600;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.04);
+        }
+
+        .scaling-option:has(:focus-visible) {
+            outline: 2px solid #2563eb;
+            outline-offset: 2px;
+        }
+
+        .scaling-toggle:disabled {
+            opacity: 0.6;
+        }
+
+        .scaling-toggle:disabled .scaling-option {
+            cursor: not-allowed;
         }
 
         @media (pointer: coarse) {
-            #print-scaling {
-                min-height: 48px;
+            .scaling-option {
+                min-height: 44px;
+                padding: 0.5rem 1rem;
+            }
+        }
+
+        #file-list {
+            max-height: min(16rem, 35vh);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            scrollbar-gutter: stable;
+            --scrollbar-thumb: #6b7280;
+            --scrollbar-track: #f3f4f6;
+            scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+            scrollbar-width: auto;
+        }
+
+        @supports not (scrollbar-color: auto) {
+            #file-list::-webkit-scrollbar {
+                width: 10px;
+                height: 10px;
+            }
+
+            #file-list::-webkit-scrollbar-thumb {
+                background: var(--scrollbar-thumb);
+                border-radius: 9999px;
+            }
+
+            #file-list::-webkit-scrollbar-track {
+                background: var(--scrollbar-track);
             }
         }
     </style>
 </head>
-<body class="h-full flex items-center justify-center p-4">
+<body class="min-h-full bg-gray-50 flex flex-col p-4 sm:p-6">
 
+    <header class="w-full flex justify-end mb-4 sm:mb-0">
+        <fieldset id="print-scaling-group" class="scaling-toggle inline-flex items-center p-1 rounded-full bg-gray-200/80 border border-gray-300/80 shadow-sm">
+            <legend class="visually-hidden">打印缩放模式</legend>
+            <label class="scaling-option" title="适应页面：等比缩放到铺满纸宽（小图会放大，大图会缩小）">
+                <input type="radio" name="printScaling" value="fit" class="visually-hidden" checked>
+                <span>fit</span>
+            </label>
+            <label class="scaling-option" title="自动适应：仅超尺寸时缩小，小图保持原大小">
+                <input type="radio" name="printScaling" value="auto-fit" class="visually-hidden">
+                <span>auto-fit</span>
+            </label>
+        </fieldset>
+    </header>
+
+    <main class="flex-1 flex items-center justify-center">
     <div class="w-full max-w-lg mx-auto bg-white rounded-xl shadow-lg p-8 space-y-6">
-        <div class="flex items-center justify-end gap-2 -mt-2">
-            <label for="print-scaling" class="text-sm font-medium text-gray-700 whitespace-nowrap">打印缩放</label>
-            <select
-                id="print-scaling"
-                name="printScaling"
-                class="text-gray-800 bg-white border border-gray-500 rounded-md px-2.5 py-1.5 min-h-[36px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 cursor-pointer disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
-            >
-                <option value="fit" selected>fit（适应页面）</option>
-                <option value="auto-fit">auto-fit（仅超尺寸缩放）</option>
-                <option value="none">none（无额外参数）</option>
-            </select>
-        </div>
-
         <div class="text-center">
             <h1 class="text-3xl font-bold text-gray-800">网络打印机</h1>
             <p class="text-gray-500 mt-2">上传文件并发送到热敏打印机</p>
@@ -53,14 +130,14 @@
                 <p class="mt-4 text-sm text-gray-600">
                     <span class="font-semibold text-blue-600">点击上传</span> 或拖拽文件到此处
                 </p>
-                <p class="text-xs text-gray-500 mt-1">最多支持 9 个文件，也可以直接在页面上粘贴文件 (Ctrl+V)</p>
+                <p class="text-xs text-gray-500 mt-1">支持批量上传多个文件，也可以直接在页面上粘贴文件 (Ctrl+V)</p>
             </div>
         </div>
 
         <div id="file-list-container" class="hidden space-y-4">
             <div class="bg-gray-50 p-4 rounded-md">
-                <p class="font-medium text-gray-700 mb-3">已上传文件 (<span id="file-count">0</span>/9):</p>
-                <div id="file-list" class="space-y-2"></div>
+                <p class="font-medium text-gray-700 mb-3">已上传文件 (<span id="file-count">0</span>):</p>
+                <div id="file-list" class="space-y-2 pr-1"></div>
             </div>
             <button id="print-button" disabled class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors">
                 按顺序打印所有文件
@@ -69,6 +146,7 @@
 
         <div id="status-message" role="status" aria-live="polite" class="text-center text-sm font-medium"></div>
     </div>
+    </main>
 
 <script>
     const dropZone = document.getElementById('drop-zone');
@@ -77,13 +155,13 @@
     const fileList = document.getElementById('file-list');
     const fileCount = document.getElementById('file-count');
     const printButton = document.getElementById('print-button');
-    const printScalingSelect = document.getElementById('print-scaling');
+    const printScalingGroup = document.getElementById('print-scaling-group');
     const statusMessage = document.getElementById('status-message');
 
     // 文件列表：存储 { file, serverFilename, originalName, status }
     // status: 'pending' | 'uploading' | 'uploaded' | 'printing' | 'printed' | 'error'
     let files = [];
-    const MAX_FILES = 9;
+    let isUploading = false;
 
     // --- 事件监听 ---
 
@@ -92,6 +170,7 @@
     fileInput.addEventListener('change', () => {
         if (fileInput.files.length > 0) {
             handleFiles(Array.from(fileInput.files));
+            fileInput.value = '';
         }
     });
 
@@ -126,21 +205,8 @@
 
     // 处理多个文件
     function handleFiles(newFiles) {
-        // 检查是否超过最大数量
-        const remainingSlots = MAX_FILES - files.length;
-        if (remainingSlots <= 0) {
-            setStatus(`最多只能上传 ${MAX_FILES} 个文件`, 'text-red-600');
-            return;
-        }
-
-        // 限制添加的文件数量
-        const filesToAdd = newFiles.slice(0, remainingSlots);
-        if (newFiles.length > remainingSlots) {
-            setStatus(`只能添加 ${remainingSlots} 个文件（已达到上限）`, 'text-yellow-600');
-        }
-
         // 添加文件到列表
-        filesToAdd.forEach(file => {
+        newFiles.forEach(file => {
             files.push({
                 file: file,
                 serverFilename: null,
@@ -156,13 +222,20 @@
 
     // 上传待处理的文件
     async function uploadPendingFiles() {
-        const pendingFiles = files.filter(f => f.status === 'pending');
-        if (pendingFiles.length === 0) return;
+        if (isUploading) return;
+        isUploading = true;
 
-        for (const fileItem of pendingFiles) {
-            fileItem.status = 'uploading';
-            updateFileList();
-            await handleFileUpload(fileItem);
+        try {
+            while (true) {
+                const fileItem = files.find(f => f.status === 'pending');
+                if (!fileItem) break;
+
+                fileItem.status = 'uploading';
+                updateFileList();
+                await handleFileUpload(fileItem);
+            }
+        } finally {
+            isUploading = false;
         }
     }
 
@@ -205,9 +278,10 @@
             return;
         }
 
-        const printScaling = printScalingSelect.value;
+        const selectedScaling = printScalingGroup.querySelector('input[name="printScaling"]:checked');
+        const printScaling = selectedScaling ? selectedScaling.value : 'fit';
         printButton.disabled = true;
-        printScalingSelect.disabled = true;
+        printScalingGroup.disabled = true;
         setStatus(`准备打印 ${uploadedFiles.length} 个文件...`, 'text-blue-600');
 
         let successCount = 0;
@@ -259,7 +333,7 @@
                 setStatus(`打印完成：成功 ${successCount} 个，失败 ${failCount} 个`, 'text-yellow-600');
             }
         } finally {
-            printScalingSelect.disabled = false;
+            printScalingGroup.disabled = false;
             printButton.disabled = false;
         }
     }
